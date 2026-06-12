@@ -1,0 +1,55 @@
+英语教学质量评估分类实验结果
+==================================================
+
+数据信息:
+- 样本总数: 1650
+- 特征数量: 13
+- 训练集大小: 1155
+- 测试集大小: 495
+- 类别标签: ['High', 'Low', 'Medium']
+
+使用的数值特征:
+1. attendance_rate
+2. assignment_completion_rate
+3. avg_assignment_score
+4. exam_score
+5. quiz_avg_score
+6. participation_frequency
+7. lms_logins
+8. avg_session_duration
+9. video_completion_rate
+10. self_assessment_score
+11. peer_feedback_score
+12. teacher_feedback_score
+13. engagement_index
+
+实验设置:
+- 随机种子: 42
+- 训练/测试分割比例: 7:3
+- 采用分层采样
+
+使用的采样方法:
+- No Sampling
+- SMOTE
+- SMOTEENN
+- BorderlineSMOTE
+
+使用的分类器:
+- 随机森林
+- 逻辑回归
+- 决策树
+- SVM
+- KNN
+
+性能指标说明:
+- F1分数: 精确率和召回率的调和平均值
+- 宏平均F1: 各类别F1分数的简单平均
+- G-均值: 各类别准确率的几何平均
+
+详细结果已保存至: model_performance_results.csv
+ROC曲线图已保存至:
+- roc_curve_high.png (高质量)
+- roc_curve_medium.png (中质量)
+- roc_curve_low.png (低质量)
+
+实验完成!

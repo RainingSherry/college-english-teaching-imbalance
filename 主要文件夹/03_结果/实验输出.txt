@@ -1,0 +1,99 @@
+英语教学质量评估实验结果
+==================================================
+
+数据预处理:
+- 去除非数值特征: student_id, course_id, teacher_id, semester
+- 保留数值特征: attendance_rate, assignment_completion_rate, avg_assignment_score, exam_score, quiz_avg_score, participation_frequency, lms_logins, avg_session_duration, video_completion_rate, self_assessment_score, peer_feedback_score, teacher_feedback_score, engagement_index
+- 标签编码: High=2, Medium=1, Low=0
+- 数据集7:3划分训练集和测试集
+
+实验设置:
+- 固定随机种子: 42
+- 采样方法: No Sampling, SMOTE, SMOTEENN, BorderlineSMOTE
+- 模型: Random Forest, Logistic Regression, Decision Tree, SVM, KNN
+
+模型性能结果:
+--------------------------------------------------------------------------------
+Random Forest + No Sampling
+  High F1: 0.9004, Medium F1: 0.9341, Low F1: 0.0000
+  Macro F1: 0.6115, G-Mean: 0.0000
+
+Random Forest + SMOTE
+  High F1: 0.9159, Medium F1: 0.9437, Low F1: 0.6087
+  Macro F1: 0.8228, G-Mean: 0.7253
+
+Random Forest + SMOTEENN
+  High F1: 0.8742, Medium F1: 0.9109, Low F1: 0.6250
+  Macro F1: 0.8034, G-Mean: 0.7055
+
+Random Forest + BorderlineSMOTE
+  High F1: 0.9154, Medium F1: 0.9386, Low F1: 0.6667
+  Macro F1: 0.8402, G-Mean: 0.7568
+
+Logistic Regression + No Sampling
+  High F1: 0.9698, Medium F1: 0.9882, Low F1: 0.5556
+  Macro F1: 0.8379, G-Mean: 0.7297
+
+Logistic Regression + SMOTE
+  High F1: 0.9621, Medium F1: 0.9881, Low F1: 0.6857
+  Macro F1: 0.8787, G-Mean: 0.8074
+
+Logistic Regression + SMOTEENN
+  High F1: 0.9183, Medium F1: 0.9558, Low F1: 0.6154
+  Macro F1: 0.8298, G-Mean: 0.7350
+
+Logistic Regression + BorderlineSMOTE
+  High F1: 0.9598, Medium F1: 0.9881, Low F1: 0.6667
+  Macro F1: 0.8715, G-Mean: 0.7952
+
+Decision Tree + No Sampling
+  High F1: 0.8419, Medium F1: 0.8813, Low F1: 0.4000
+  Macro F1: 0.7077, G-Mean: 0.5448
+
+Decision Tree + SMOTE
+  High F1: 0.8000, Medium F1: 0.8605, Low F1: 0.5294
+  Macro F1: 0.7300, G-Mean: 0.6037
+
+Decision Tree + SMOTEENN
+  High F1: 0.7810, Medium F1: 0.8465, Low F1: 0.4103
+  Macro F1: 0.6793, G-Mean: 0.5208
+
+Decision Tree + BorderlineSMOTE
+  High F1: 0.8426, Medium F1: 0.8964, Low F1: 0.4865
+  Macro F1: 0.7418, G-Mean: 0.6062
+
+SVM + No Sampling
+  High F1: 0.9359, Medium F1: 0.9647, Low F1: 0.0000
+  Macro F1: 0.6335, G-Mean: 0.0000
+
+SVM + SMOTE
+  High F1: 0.9414, Medium F1: 0.9665, Low F1: 0.5455
+  Macro F1: 0.8178, G-Mean: 0.7045
+
+SVM + SMOTEENN
+  High F1: 0.8846, Medium F1: 0.9172, Low F1: 0.5185
+  Macro F1: 0.7734, G-Mean: 0.6486
+
+SVM + BorderlineSMOTE
+  High F1: 0.9419, Medium F1: 0.9662, Low F1: 0.5455
+  Macro F1: 0.8179, G-Mean: 0.7046
+
+KNN + No Sampling
+  High F1: 0.8087, Medium F1: 0.8533, Low F1: 0.0000
+  Macro F1: 0.5540, G-Mean: 0.0000
+
+KNN + SMOTE
+  High F1: 0.7500, Medium F1: 0.8504, Low F1: 0.3600
+  Macro F1: 0.6535, G-Mean: 0.4792
+
+KNN + SMOTEENN
+  High F1: 0.6634, Medium F1: 0.8554, Low F1: 0.2022
+  Macro F1: 0.5737, G-Mean: 0.3388
+
+KNN + BorderlineSMOTE
+  High F1: 0.7545, Medium F1: 0.8429, Low F1: 0.3830
+  Macro F1: 0.6602, G-Mean: 0.4935
+
+文件输出:
+- 模型性能结果: /home/ll/codes/英语教学/模型性能结果.csv
+- ROC曲线图: /home/ll/codes/英语教学/roc_curves.png
