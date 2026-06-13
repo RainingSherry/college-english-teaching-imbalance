@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
+from matplotlib import font_manager
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
@@ -46,9 +47,9 @@ MODEL_FACTORIES = {
 METHOD_LABELS_ZH = {
     "NoSampling": "不采样",
     "SMOTE": "SMOTE",
-    "SMOTEENN": "SMOTEENN",
-    "BorderlineSMOTE": "BorderlineSMOTE",
-    "GAN": "GAN",
+    "SMOTEENN": "SMOTE-ENN",
+    "BorderlineSMOTE": "边界SMOTE",
+    "GAN": "GAN插补",
 }
 METHOD_LABELS_EN = {
     "NoSampling": "NoSampling",
@@ -78,6 +79,22 @@ def set_seed(seed: int) -> None:
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.use_deterministic_algorithms(False)
+
+
+def configure_chinese_font(project_dir: Path) -> None:
+    candidates = [
+        *sorted((project_dir / "04_latex" / "fonts").glob("*.otf")),
+        *sorted(Path("/tmp/tectonic-cache").glob("**/FandolSong-Regular.otf")),
+        *sorted(Path("/tmp/tectonic-cache").glob("**/FandolHei-Regular.otf")),
+    ]
+    for font_path in candidates:
+        if font_path.exists():
+            font_manager.fontManager.addfont(str(font_path))
+            family = font_manager.FontProperties(fname=str(font_path)).get_name()
+            plt.rcParams["font.family"] = family
+            plt.rcParams["axes.unicode_minus"] = False
+            return
+    plt.rcParams["axes.unicode_minus"] = False
 
 
 def geometric_mean(y_true: np.ndarray, y_pred: np.ndarray, labels: np.ndarray) -> float:
@@ -515,13 +532,13 @@ def plot_metric_boxplot(raw_df: pd.DataFrame, metric: str, ylabel: str, output_p
             marker="s",
             linestyle="",
             markersize=7,
-            label=MODEL_LABELS_EN[model_name],
+            label=MODEL_LABELS_ZH[model_name],
         )
         for i, model_name in enumerate(model_order)
     ]
     ax.set_xticks(base_positions)
-    ax.set_xticklabels([METHOD_LABELS_EN[m] for m in method_order])
-    ax.set_xlabel("Sampling / interpolation strategy")
+    ax.set_xticklabels([METHOD_LABELS_ZH[m] for m in method_order])
+    ax.set_xlabel("采样/插补方式")
     ax.set_ylabel(ylabel)
     ax.set_ylim(-0.02, 1.05)
     ax.grid(axis="y", alpha=0.25)
@@ -543,6 +560,7 @@ def main() -> None:
     table_dir = latex_dir / "tables"
     for directory in [result_dir, latex_dir, figure_dir, table_dir]:
         directory.mkdir(parents=True, exist_ok=True)
+    configure_chinese_font(project_dir)
 
     df = pd.read_csv(data_path)
     x = df[FEATURE_COLUMNS].to_numpy(dtype=np.float32)
@@ -615,9 +633,9 @@ def main() -> None:
     )
 
     build_latex_table(summary, table_dir / "cv_results_table.tex")
-    plot_metric_boxplot(raw_df, "High_F1", "High-quality F1 (5-fold)", figure_dir / "cv_box_high_f1.png")
-    plot_metric_boxplot(raw_df, "Macro_F1", "Macro-F1 (5-fold)", figure_dir / "cv_box_macro_f1.png")
-    plot_metric_boxplot(raw_df, "G_mean", "G-mean (5-fold)", figure_dir / "cv_box_gmean.png")
+    plot_metric_boxplot(raw_df, "High_F1", "高质量类F1（5折）", figure_dir / "cv_box_high_f1.png")
+    plot_metric_boxplot(raw_df, "Macro_F1", "宏平均F1（5折）", figure_dir / "cv_box_macro_f1.png")
+    plot_metric_boxplot(raw_df, "G_mean", "G-均值（5折）", figure_dir / "cv_box_gmean.png")
 
     best = summary.iloc[0]
     second = summary.iloc[1]
