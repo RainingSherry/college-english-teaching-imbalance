@@ -9,7 +9,7 @@ import torch
 from matplotlib import font_manager
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import accuracy_score, auc, f1_score, precision_score, recall_score, roc_curve
 from sklearn.model_selection import StratifiedKFold
 from sklearn.neighbors import KNeighborsClassifier, NearestNeighbors
 from sklearn.preprocessing import LabelEncoder, StandardScaler
@@ -72,6 +72,11 @@ MODEL_LABELS_EN = {
     "KNN": "KNN",
     "Logistic Regression": "LR",
 }
+CLASS_LABELS_ZH = {
+    "High": "高质量",
+    "Medium": "中质量",
+    "Low": "低质量",
+}
 
 
 def set_seed(seed: int) -> None:
@@ -132,6 +137,23 @@ def evaluate(
         "Balanced_Accuracy": recall_score(y_true, y_pred, average="macro", zero_division=0),
         "G_mean": geometric_mean(y_true, y_pred, labels),
     }
+
+
+def score_matrix(model, x_test: np.ndarray, labels: np.ndarray) -> np.ndarray:
+    if hasattr(model, "predict_proba"):
+        raw_scores = model.predict_proba(x_test)
+    else:
+        raw_scores = model.decision_function(x_test)
+    raw_scores = np.asarray(raw_scores)
+    if raw_scores.ndim == 1:
+        raw_scores = raw_scores.reshape(-1, 1)
+
+    scores = np.zeros((len(x_test), len(labels)), dtype=float)
+    for source_idx, class_label in enumerate(model.classes_):
+        target_idx = int(np.where(labels == class_label)[0][0])
+        if source_idx < raw_scores.shape[1]:
+            scores[:, target_idx] = raw_scores[:, source_idx]
+    return scores
 
 
 def smote_generate(
@@ -549,6 +571,57 @@ def plot_metric_boxplot(raw_df: pd.DataFrame, metric: str, ylabel: str, output_p
     plt.close(fig)
 
 
+def plot_roc_panel(
+    score_df: pd.DataFrame,
+    summary_df: pd.DataFrame,
+    class_names: list[str],
+    output_path: Path,
+    auc_path: Path,
+    top_n: int = 6,
+) -> None:
+    top_combos = summary_df.sort_values(["High_F1_mean", "Macro_F1_mean"], ascending=False).head(top_n)
+    combo_keys = [(row.Model, row.Method) for row in top_combos.itertuples()]
+    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    auc_rows = []
+
+    fig, axes = plt.subplots(1, len(class_names), figsize=(13.0, 4.0), sharex=True, sharey=True)
+    if len(class_names) == 1:
+        axes = [axes]
+
+    for axis, class_name in zip(axes, class_names):
+        score_column = f"Score_{class_name}"
+        for combo_idx, (model_name, method_name) in enumerate(combo_keys):
+            subset = score_df[(score_df["Model"] == model_name) & (score_df["Method"] == method_name)]
+            if subset.empty:
+                continue
+            y_combo_true = (subset["True_Label_Name"] == class_name).astype(int).to_numpy()
+            y_score = subset[score_column].to_numpy(dtype=float)
+            fpr, tpr, _ = roc_curve(y_combo_true, y_score)
+            roc_auc = auc(fpr, tpr)
+            label = f"{MODEL_LABELS_ZH[model_name]}+{METHOD_LABELS_ZH[method_name]} AUC={roc_auc:.3f}"
+            axis.plot(fpr, tpr, linewidth=1.45, color=colors[combo_idx % len(colors)], label=label)
+            auc_rows.append(
+                {
+                    "类别": CLASS_LABELS_ZH[class_name],
+                    "模型": MODEL_LABELS_ZH[model_name],
+                    "采样/插补方式": METHOD_LABELS_ZH[method_name],
+                    "AUC": round(float(roc_auc), 3),
+                }
+            )
+        axis.plot([0, 1], [0, 1], linestyle="--", color="0.55", linewidth=0.9)
+        axis.set_title(f"{CLASS_LABELS_ZH[class_name]}类别")
+        axis.set_xlabel("假阳性率")
+        axis.grid(alpha=0.25)
+        axis.legend(fontsize=6.2, loc="lower right", framealpha=0.92)
+
+    axes[0].set_ylabel("真阳性率")
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=300)
+    fig.savefig(output_path.with_suffix(".pdf"))
+    plt.close(fig)
+    pd.DataFrame(auc_rows).to_csv(auc_path, index=False, encoding="utf-8-sig")
+
+
 def main() -> None:
     set_seed(SEED)
     code_dir = Path(__file__).resolve().parent
@@ -572,6 +645,7 @@ def main() -> None:
     low_label = int(encoder.transform(["Low"])[0])
 
     raw_rows = []
+    score_rows = []
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
     for fold, (train_idx, test_idx) in enumerate(skf.split(x, y), start=1):
         scaler = StandardScaler()
@@ -592,6 +666,7 @@ def main() -> None:
                 model = factory(SEED + fold)
                 model.fit(x_fit, y_fit)
                 y_pred = model.predict(x_test)
+                scores = score_matrix(model, x_test, labels)
                 row = {
                     "Fold": fold,
                     "Model": model_name,
@@ -601,9 +676,25 @@ def main() -> None:
                 }
                 row.update(evaluate(y_test, y_pred, labels, high_label, medium_label, low_label))
                 raw_rows.append(row)
+                y_test_names = encoder.inverse_transform(y_test)
+                for sample_idx, true_label_name in enumerate(y_test_names):
+                    score_row = {
+                        "Fold": fold,
+                        "Model": model_name,
+                        "Model_ZH": MODEL_LABELS_ZH[model_name],
+                        "Method": method,
+                        "Method_ZH": METHOD_LABELS_ZH[method],
+                        "True_Label_Name": true_label_name,
+                        "True_Label_ZH": CLASS_LABELS_ZH[true_label_name],
+                    }
+                    for label_idx, class_name in enumerate(encoder.classes_):
+                        score_row[f"Score_{class_name}"] = scores[sample_idx, label_idx]
+                    score_rows.append(score_row)
 
     raw_df = pd.DataFrame(raw_rows)
+    score_df = pd.DataFrame(score_rows)
     raw_df.to_csv(result_dir / "latex_cv_5fold_raw_results.csv", index=False, encoding="utf-8-sig")
+    score_df.to_csv(result_dir / "latex_cv_5fold_oof_scores.csv", index=False, encoding="utf-8-sig")
 
     metric_cols = [
         "High_F1",
@@ -636,6 +727,13 @@ def main() -> None:
     plot_metric_boxplot(raw_df, "High_F1", "高质量类F1（5折）", figure_dir / "cv_box_high_f1.png")
     plot_metric_boxplot(raw_df, "Macro_F1", "宏平均F1（5折）", figure_dir / "cv_box_macro_f1.png")
     plot_metric_boxplot(raw_df, "G_mean", "G-均值（5折）", figure_dir / "cv_box_gmean.png")
+    plot_roc_panel(
+        score_df,
+        summary,
+        ["High", "Medium", "Low"],
+        figure_dir / "cv_roc_top_combinations.png",
+        result_dir / "latex_cv_roc_auc_top_combinations.csv",
+    )
 
     best = summary.iloc[0]
     second = summary.iloc[1]
