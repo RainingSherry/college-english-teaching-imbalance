@@ -396,17 +396,17 @@ def style_best_second(values: list[float], labels: list[str]) -> dict[str, str]:
     return styled
 
 
-def style_best_second_mean_var(
+def style_best_second_mean_std(
     mean_values: list[float],
-    var_values: list[float],
+    std_values: list[float],
     labels: list[str],
 ) -> dict[str, str]:
     unique_desc = sorted(set(round(v, 12) for v in mean_values), reverse=True)
     best = unique_desc[0]
     second = unique_desc[1] if len(unique_desc) > 1 else None
     styled = {}
-    for label, mean_value, var_value in zip(labels, mean_values, var_values):
-        text = f"{mean_value:.3f}$\\pm${var_value:.3f}"
+    for label, mean_value, std_value in zip(labels, mean_values, std_values):
+        text = f"{mean_value:.3f}$\\pm${std_value:.3f}"
         rounded = round(mean_value, 12)
         if rounded == best:
             text = f"\\textbf{{{text}}}"
@@ -431,9 +431,9 @@ def build_latex_table(summary_df: pd.DataFrame, tex_path: Path) -> None:
     combo_labels = [f"{row.Model_ZH}+{row.Method_ZH}" for row in ordered.itertuples()]
     metric_cols = ["High_F1_mean", "High_Recall_mean", "Macro_F1_mean", "G_mean_mean"]
     styled_cols = {
-        col: style_best_second_mean_var(
+        col: style_best_second_mean_std(
             ordered[col].tolist(),
-            ordered[f"{col[:-5]}_var"].tolist(),
+            ordered[f"{col[:-5]}_std"].tolist(),
             combo_labels,
         )
         for col in metric_cols
@@ -442,7 +442,7 @@ def build_latex_table(summary_df: pd.DataFrame, tex_path: Path) -> None:
     lines = [
         "\\begin{table}[htbp]",
         "\\centering",
-        "\\caption{不同模型与采样/插补方式下的5折交叉验证结果（均值$\\pm$方差）}",
+        "\\caption{不同模型与采样/插补方式下的5折交叉验证结果（均值$\\pm$标准差）}",
         "\\label{tab:cv-results}",
         "\\small",
         "\\setlength{\\tabcolsep}{3.6pt}",
@@ -475,7 +475,7 @@ def build_latex_table(summary_df: pd.DataFrame, tex_path: Path) -> None:
             "\\end{tabular}",
             "}%",
             "\\vspace{2pt}",
-            "\\parbox{\\textwidth}{\\footnotesize 注：表中数值为5折交叉验证的均值$\\pm$方差，方差按5折结果计算。各指标列中最优均值加粗，第二优均值加下划线；模型与采样/插补方式名称的加粗或下划线依据高质量F1均值排序。}",
+            "\\parbox{\\textwidth}{\\footnotesize 注：表中数值为5折交叉验证的均值$\\pm$标准差，标准差按5折结果计算。各指标列中最优均值加粗，第二优均值加下划线；模型与采样/插补方式名称的加粗或下划线依据高质量F1均值排序。}",
             "\\end{table}",
         ]
     )
@@ -718,7 +718,7 @@ def main() -> None:
     summary = summary.sort_values(["High_F1_mean", "Macro_F1_mean"], ascending=False)
     summary.to_csv(result_dir / "latex_cv_5fold_summary_results.csv", index=False, encoding="utf-8-sig")
     summary.to_csv(
-        result_dir / "latex_cv_5fold_summary_mean_variance_results.csv",
+        result_dir / "latex_cv_5fold_summary_mean_std_results.csv",
         index=False,
         encoding="utf-8-sig",
     )
