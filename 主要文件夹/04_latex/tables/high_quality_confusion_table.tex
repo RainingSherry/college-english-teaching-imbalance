@@ -1,0 +1,16 @@
+\begin{table}[htbp]
+\centering
+\caption{逻辑回归+边界SMOTE高质量类折外预测混淆矩阵与指标}
+\label{tab:high-quality-confusion}
+\small
+\begin{tabular}{lcc}
+\toprule
+真实类别 $\backslash$ 预测类别 & 预测为高质量 & 预测为非高质量 \\
+\midrule
+高质量 & 38 & 1 \\
+非高质量 & 17 & 1594 \\
+\bottomrule
+\end{tabular}
+\vspace{2pt}
+\parbox{0.92\textwidth}{\footnotesize Precision=0.691，Recall=0.974，F1=0.809；FP真实标签构成：中质量:17。}
+\end{table}

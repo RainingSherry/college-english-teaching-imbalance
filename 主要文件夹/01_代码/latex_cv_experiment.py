@@ -34,6 +34,21 @@ FEATURE_COLUMNS = [
     "teacher_feedback_score",
     "engagement_index",
 ]
+FEATURE_LABELS_ZH = {
+    "attendance_rate": "出勤率",
+    "assignment_completion_rate": "作业完成率",
+    "avg_assignment_score": "平均作业分数",
+    "exam_score": "考试分数",
+    "quiz_avg_score": "平均测验分数",
+    "participation_frequency": "参与频率",
+    "lms_logins": "学习管理系统登录次数",
+    "avg_session_duration": "平均会话时长",
+    "video_completion_rate": "视频完成率",
+    "self_assessment_score": "自我评估分数",
+    "peer_feedback_score": "同行反馈分数",
+    "teacher_feedback_score": "教师反馈分数",
+    "engagement_index": "参与度指数",
+}
 SAMPLING_METHODS = ["NoSampling", "SMOTE", "SMOTEENN", "BorderlineSMOTE", "GAN"]
 MODEL_FACTORIES = {
     "Decision Tree": lambda seed: DecisionTreeClassifier(random_state=seed, class_weight=None),
@@ -622,6 +637,194 @@ def plot_roc_panel(
     pd.DataFrame(auc_rows).to_csv(auc_path, index=False, encoding="utf-8-sig")
 
 
+def format_table_value(value: float) -> str:
+    if pd.isna(value):
+        return "--"
+    return f"{float(value):.3f}"
+
+
+def high_quality_error_group(true_label: str, pred_label: str) -> str:
+    if true_label == "High" and pred_label == "High":
+        return "TP"
+    if true_label != "High" and pred_label == "High":
+        return "FP"
+    if true_label == "High" and pred_label != "High":
+        return "FN"
+    return "TN"
+
+
+def build_high_quality_error_analysis(
+    df: pd.DataFrame,
+    prediction_df: pd.DataFrame,
+    best_row: pd.Series,
+    result_dir: Path,
+    table_dir: Path,
+) -> dict[str, float | int | str]:
+    model_name = str(best_row["Model"])
+    method_name = str(best_row["Method"])
+    model_zh = str(best_row["Model_ZH"])
+    method_zh = str(best_row["Method_ZH"])
+    subset = prediction_df[
+        (prediction_df["Model"] == model_name) & (prediction_df["Method"] == method_name)
+    ].copy()
+    subset["高质量判别类型"] = [
+        high_quality_error_group(true_label, pred_label)
+        for true_label, pred_label in zip(subset["True_Label_Name"], subset["Pred_Label_Name"])
+    ]
+    subset["高质量判别类型_ZH"] = subset["高质量判别类型"].map(
+        {"TP": "高质量正确识别", "FP": "非高质量误判为高质量", "FN": "高质量漏判", "TN": "非高质量正确排除"}
+    )
+
+    counts = subset["高质量判别类型"].value_counts()
+    tp = int(counts.get("TP", 0))
+    fp = int(counts.get("FP", 0))
+    fn = int(counts.get("FN", 0))
+    tn = int(counts.get("TN", 0))
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    fp_true_counts = subset.loc[subset["高质量判别类型"] == "FP", "True_Label_ZH"].value_counts()
+    fp_true_summary = "；".join(f"{label}:{count}" for label, count in fp_true_counts.items()) or "--"
+
+    metrics = {
+        "模型": model_zh,
+        "采样/插补方式": method_zh,
+        "TP": tp,
+        "FP": fp,
+        "FN": fn,
+        "TN": tn,
+        "Precision": precision,
+        "Recall": recall,
+        "F1": f1,
+        "FP真实标签构成": fp_true_summary,
+    }
+    pd.DataFrame([metrics]).to_csv(
+        result_dir / "high_quality_oof_confusion_metrics.csv",
+        index=False,
+        encoding="utf-8-sig",
+    )
+    confusion_df = pd.DataFrame(
+        [
+            {"真实类别": "高质量", "预测为高质量": tp, "预测为非高质量": fn},
+            {"真实类别": "非高质量", "预测为高质量": fp, "预测为非高质量": tn},
+        ]
+    )
+    confusion_df.to_csv(
+        result_dir / "high_quality_oof_confusion_matrix.csv",
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+    focused = subset[subset["高质量判别类型"].isin(["TP", "FP", "FN"])].copy()
+    focused_features = df.loc[focused["Sample_Index"].astype(int), FEATURE_COLUMNS].reset_index(drop=True)
+    focused_export = pd.concat([focused.reset_index(drop=True), focused_features], axis=1)
+    focused_export.to_csv(
+        result_dir / "high_quality_tp_fp_fn_samples.csv",
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+    feature_std = df[FEATURE_COLUMNS].std(ddof=0).replace(0, np.nan)
+    feature_rows = []
+    for feature in FEATURE_COLUMNS:
+        group_means = {}
+        for group in ["TP", "FP", "FN"]:
+            group_indices = subset.loc[subset["高质量判别类型"] == group, "Sample_Index"].astype(int)
+            group_means[group] = df.loc[group_indices, feature].mean() if len(group_indices) else np.nan
+        tp_mean = group_means["TP"]
+        fp_mean = group_means["FP"]
+        fn_mean = group_means["FN"]
+        std_value = feature_std[feature]
+        feature_rows.append(
+            {
+                "特征": FEATURE_LABELS_ZH[feature],
+                "英文特征": feature,
+                f"TP均值(n={tp})": tp_mean,
+                f"FP均值(n={fp})": fp_mean,
+                f"FN均值(n={fn})": fn_mean,
+                "FP-TP标准化差异": (fp_mean - tp_mean) / std_value,
+                "FN-TP标准化差异": (fn_mean - tp_mean) / std_value,
+            }
+        )
+    feature_df = pd.DataFrame(feature_rows)
+    feature_df.to_csv(
+        result_dir / "high_quality_tp_fp_fn_feature_means.csv",
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+    confusion_lines = [
+        "\\begin{table}[htbp]",
+        "\\centering",
+        f"\\caption{{{model_zh}+{method_zh}高质量类折外预测混淆矩阵与指标}}",
+        "\\label{tab:high-quality-confusion}",
+        "\\small",
+        "\\begin{tabular}{lcc}",
+        "\\toprule",
+        "真实类别 $\\backslash$ 预测类别 & 预测为高质量 & 预测为非高质量 \\\\",
+        "\\midrule",
+        f"高质量 & {tp} & {fn} \\\\",
+        f"非高质量 & {fp} & {tn} \\\\",
+        "\\bottomrule",
+        "\\end{tabular}",
+        "\\vspace{2pt}",
+        (
+            "\\parbox{0.92\\textwidth}{\\footnotesize "
+            f"Precision={precision:.3f}，Recall={recall:.3f}，F1={f1:.3f}；"
+            f"FP真实标签构成：{latex_escape(fp_true_summary)}。"
+            "}"
+        ),
+        "\\end{table}",
+    ]
+    (table_dir / "high_quality_confusion_table.tex").write_text(
+        "\n".join(confusion_lines) + "\n",
+        encoding="utf-8",
+    )
+
+    mean_columns = [f"TP均值(n={tp})", f"FP均值(n={fp})", f"FN均值(n={fn})"]
+    feature_lines = [
+        "\\begin{table}[htbp]",
+        "\\centering",
+        f"\\caption{{{model_zh}+{method_zh}高质量类TP/FP/FN特征均值对比}}",
+        "\\label{tab:high-quality-error-features}",
+        "\\small",
+        "\\setlength{\\tabcolsep}{4pt}",
+        "\\resizebox{\\textwidth}{!}{%",
+        "\\begin{tabular}{lccccc}",
+        "\\toprule",
+        "特征 & TP均值 & FP均值 & FN均值 & FP-TP标准化差异 & FN-TP标准化差异 \\\\",
+        "\\midrule",
+    ]
+    for _, row in feature_df.iterrows():
+        feature_lines.append(
+            f"{latex_escape(str(row['特征']))} & "
+            f"{format_table_value(row[mean_columns[0]])} & "
+            f"{format_table_value(row[mean_columns[1]])} & "
+            f"{format_table_value(row[mean_columns[2]])} & "
+            f"{format_table_value(row['FP-TP标准化差异'])} & "
+            f"{format_table_value(row['FN-TP标准化差异'])} \\\\"
+        )
+    feature_lines.extend(
+        [
+            "\\bottomrule",
+            "\\end{tabular}",
+            "}%",
+            "\\vspace{2pt}",
+            (
+                "\\parbox{\\textwidth}{\\footnotesize 注：TP表示真实高质量且预测为高质量，"
+                "FP表示真实非高质量但预测为高质量，FN表示真实高质量但预测为非高质量。"
+                "标准化差异按（组均值-TP均值）/全样本标准差计算。}"
+            ),
+            "\\end{table}",
+        ]
+    )
+    (table_dir / "high_quality_error_feature_table.tex").write_text(
+        "\n".join(feature_lines) + "\n",
+        encoding="utf-8",
+    )
+    return metrics
+
+
 def main() -> None:
     set_seed(SEED)
     code_dir = Path(__file__).resolve().parent
@@ -677,15 +880,20 @@ def main() -> None:
                 row.update(evaluate(y_test, y_pred, labels, high_label, medium_label, low_label))
                 raw_rows.append(row)
                 y_test_names = encoder.inverse_transform(y_test)
+                y_pred_names = encoder.inverse_transform(y_pred)
                 for sample_idx, true_label_name in enumerate(y_test_names):
+                    pred_label_name = y_pred_names[sample_idx]
                     score_row = {
                         "Fold": fold,
+                        "Sample_Index": int(test_idx[sample_idx]),
                         "Model": model_name,
                         "Model_ZH": MODEL_LABELS_ZH[model_name],
                         "Method": method,
                         "Method_ZH": METHOD_LABELS_ZH[method],
                         "True_Label_Name": true_label_name,
                         "True_Label_ZH": CLASS_LABELS_ZH[true_label_name],
+                        "Pred_Label_Name": pred_label_name,
+                        "Pred_Label_ZH": CLASS_LABELS_ZH[pred_label_name],
                     }
                     for label_idx, class_name in enumerate(encoder.classes_):
                         score_row[f"Score_{class_name}"] = scores[sample_idx, label_idx]
@@ -737,6 +945,7 @@ def main() -> None:
 
     best = summary.iloc[0]
     second = summary.iloc[1]
+    error_metrics = build_high_quality_error_analysis(df, score_df, best, result_dir, table_dir)
     report = [
         "LaTeX论文用5折交叉验证实验结果",
         "=" * 48,
@@ -745,6 +954,13 @@ def main() -> None:
         f"类别分布: {dict((str(k), int(v)) for k, v in Counter(df['teaching_quality_label']).items())}",
         f"最优组合: {best.Model_ZH}+{best.Method_ZH}, 高质量F1={best.High_F1_mean:.3f}, 宏平均F1={best.Macro_F1_mean:.3f}, G-均值={best.G_mean_mean:.3f}",
         f"第二组合: {second.Model_ZH}+{second.Method_ZH}, 高质量F1={second.High_F1_mean:.3f}, 宏平均F1={second.Macro_F1_mean:.3f}, G-均值={second.G_mean_mean:.3f}",
+        (
+            "高质量类折外错分分析: "
+            f"TP={error_metrics['TP']}, FP={error_metrics['FP']}, "
+            f"FN={error_metrics['FN']}, TN={error_metrics['TN']}, "
+            f"Precision={error_metrics['Precision']:.3f}, "
+            f"Recall={error_metrics['Recall']:.3f}, F1={error_metrics['F1']:.3f}"
+        ),
     ]
     (result_dir / "latex_cv_5fold_report.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
     print("\n".join(report))
