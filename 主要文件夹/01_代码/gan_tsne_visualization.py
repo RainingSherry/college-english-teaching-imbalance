@@ -1,9 +1,11 @@
 from collections import Counter
+import os
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib import font_manager
 from sklearn.manifold import TSNE
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
@@ -24,6 +26,27 @@ STYLE_MAP = {
     "中质量": {"color": "green", "marker": "s"},
     "低质量": {"color": "blue", "marker": "o"},
 }
+
+
+def configure_tsne_font(project_dir: Path) -> None:
+    font_candidates = []
+    env_font = os.environ.get("TSNE_FONT_PATH")
+    if env_font:
+        font_candidates.append(Path(env_font))
+    font_candidates.extend(
+        [
+            project_dir / "04_latex" / "fonts" / "SimHei.ttf",
+            project_dir / "04_latex" / "fonts" / "simhei.ttf",
+        ]
+    )
+    for font_path in font_candidates:
+        if font_path.exists():
+            font_manager.fontManager.addfont(str(font_path))
+            family = font_manager.FontProperties(fname=str(font_path)).get_name()
+            plt.rcParams["font.family"] = family
+            plt.rcParams["axes.unicode_minus"] = False
+            return
+    configure_chinese_font(project_dir)
 
 
 def center_distance(points: np.ndarray, labels: np.ndarray, label_a: str, label_b: str) -> float:
@@ -52,7 +75,7 @@ def plot_gan_tsne() -> None:
     result_dir = project_dir / "03_结果"
     data_path = project_dir / "02_数据" / "college_english_teaching_evaluation.csv"
     result_dir.mkdir(parents=True, exist_ok=True)
-    configure_chinese_font(project_dir)
+    configure_tsne_font(project_dir)
 
     df = pd.read_csv(data_path)
     x = df[FEATURE_COLUMNS].to_numpy(dtype=np.float32)
